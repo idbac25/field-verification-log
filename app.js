@@ -200,7 +200,10 @@
   function fieldHTML(a, f) {
     if (f.t === "head") return `<div class="subhead">${esc(f.l)}</div>`;
     const d = a.data, v = d[f.k] == null ? "" : d[f.k], hint = f.hint ? `<span class="hint"> — ${esc(f.hint)}</span>` : "";
-    if (f.t === "calc") return `<div class="fld"><label>${esc(f.l)}</label><div class="calc"><span></span><span class="v" id="cv_${f.k}">${esc(f.fn(d))}</span></div></div>`;
+    if (f.t === "calc") {
+      const auto = f.fn(d), ov = d[f.k], val = (ov != null && ov !== "") ? ov : auto;
+      return `<div class="fld"><label>${esc(f.l)} <span class="hint">— auto, editable</span></label><div class="calc"><input class="calcin" data-calc="${f.k}" id="ci_${f.k}" value="${esc(val)}"/><button type="button" class="calcreset" data-recalc="${f.k}" title="reset to the calculated value">↺ auto</button></div><div class="hint" id="cauto_${f.k}">auto: ${esc(auto)}</div></div>`;
+    }
     let inp;
     if (f.t === "area") inp = `<textarea data-k="${f.k}">${esc(v)}</textarea>`;
     else if (f.t === "sel") inp = `<select data-k="${f.k}">` + f.o.map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("") + `</select>`;
@@ -217,10 +220,20 @@
   function onInput(e) {
     const t = e.target;
     if (t.dataset.meta) { state.meta[t.dataset.meta] = t.value; saveMeta(); return; }
+    if (t.dataset.calc && openId) {
+      const a = state.assets.find(x => x.id === openId); if (!a) return; a.data = a.data || {};
+      a.data[t.dataset.calc] = t.value; touch(a); saveAsset(a); return;
+    }
     if (t.dataset.k && openId) {
       const a = state.assets.find(x => x.id === openId); if (!a) return; a.data = a.data || {};
       a.data[t.dataset.k] = t.value; touch(a); saveAsset(a);
-      allFields(a.type).forEach(f => { if (f.t === "calc") { const el = document.getElementById("cv_" + f.k); if (el) el.textContent = f.fn(a.data); } });
+      allFields(a.type).forEach(f => {
+        if (f.t !== "calc") return;
+        const auto = f.fn(a.data);
+        const hint = document.getElementById("cauto_" + f.k); if (hint) hint.textContent = "auto: " + auto;
+        const inp = document.getElementById("ci_" + f.k), ov = a.data[f.k];
+        if (inp && (ov == null || ov === "")) inp.value = auto;
+      });
     }
   }
 
@@ -295,7 +308,7 @@
     let photos = []; try { photos = (await idbByAsset(a.id)).filter(isLive); } catch (e) {}
     for (const s of sections(a.type)) {
       const rows = s.f.filter(f => f.t !== "head" && f.t !== "calc" && d[f.k] != null && d[f.k] !== "");
-      const calcs = s.f.filter(f => f.t === "calc").map(f => ({ l: f.l, v: f.fn(d) })).filter(c => c.v && c.v !== "—");
+      const calcs = s.f.filter(f => f.t === "calc").map(f => { const ov = d[f.k]; return { l: f.l, v: (ov != null && ov !== "") ? ov : f.fn(d) }; }).filter(c => c.v && c.v !== "—");
       const ph = photos.filter(p => p.sectionId === s.id);
       if (!rows.length && !calcs.length && !ph.length) continue;
       H(s.t, 11.5, "#0d6f86");
@@ -378,9 +391,10 @@
 
   // ---- event delegation ----
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-action],[data-open],[data-newtype],[data-close],[data-addphoto],[data-photoview],[data-photodel],[data-id]");
+    const t = e.target.closest("[data-action],[data-open],[data-newtype],[data-close],[data-addphoto],[data-photoview],[data-photodel],[data-recalc],[data-id]");
     if (!t) return;
     if (t.dataset.close) { const dlg = document.getElementById(t.dataset.close); if (dlg) dlg.close(); return; }
+    if (t.dataset.recalc) { const a = state.assets.find(x => x.id === openId); if (a) { const k = t.dataset.recalc, f = allFields(a.type).find(x => x.k === k); a.data[k] = ""; touch(a); saveAsset(a); const inp = document.getElementById("ci_" + k); if (inp && f) inp.value = f.fn(a.data); } return; }
     if (t.dataset.newtype) return addAsset(t.dataset.newtype);
     if (t.hasAttribute("data-open")) return openAsset(t.getAttribute("data-open"));
     if (t.dataset.addphoto) { pendingTarget = { assetId: openId, sectionId: t.dataset.addphoto }; fileIn.click(); return; }
