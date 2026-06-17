@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0e4c5b"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<title>Field Verification Log</title>
+<style>
+  :root{--teal:#0e4c5b;--teal2:#0d6f86;--cyan:#2f8fc4;--gold:#b97f22;--ink:#10212a;--muted:#52646c;--line:#cfd4d2;--sand:#f4f2ea;--card:#fff;--green:#1d7a50;--red:#9b2d20;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:var(--sand);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:17px;line-height:1.45;}
+  header{position:sticky;top:0;z-index:20;background:var(--teal);color:#fff;padding:11px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.18);}
+  header .ic{font-size:22px}
+  header .title{font-weight:700;font-size:17px;flex:1;line-height:1.15}
+  header .sub{font-size:11px;opacity:.82;font-weight:400}
+  #saved{font-size:11px;background:rgba(255,255,255,.18);padding:4px 9px;border-radius:11px;white-space:nowrap}
+  main{max-width:780px;margin:0 auto;padding:14px 14px 96px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  button{font-family:inherit;font-size:16px;border:none;border-radius:11px;padding:13px 15px;cursor:pointer;font-weight:700;min-height:48px}
+  .btn-primary{background:var(--gold);color:#1a1208}
+  .btn-teal{background:var(--teal2);color:#fff}
+  .btn-line{background:#fff;color:var(--teal);border:1.5px solid var(--line)}
+  .btn-sm{padding:10px 12px;font-size:14px;min-height:44px}
+  .btn-danger{background:#fff;color:var(--red);border:1.5px solid #e3c4c0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 1px 4px rgba(16,33,42,.06)}
+  .asset-card{display:flex;align-items:center;gap:12px;cursor:pointer}
+  .badge{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:23px;flex:0 0 auto;color:#fff}
+  .b-borehole{background:#1f6f8b}.b-reservoir{background:#0d8fb0}.b-genset{background:#9b2d20}.b-grid{background:#e0a23e;color:#1a1208}.b-other{background:#52646c}
+  .asset-card .meta{flex:1;min-width:0}
+  .asset-card .nm{font-weight:700;font-size:16.5px}
+  .asset-card .det{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .asset-card .pc{font-size:12px;color:var(--teal2);font-weight:700}
+  .asset-card .chev{color:var(--muted);font-size:24px}
+  h2.sec{font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--teal2);margin:0;padding:14px 4px 4px;font-weight:800}
+  details.grp{background:#fff;border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden}
+  details.grp>summary{list-style:none;padding:14px;font-weight:800;color:var(--teal);cursor:pointer;display:flex;justify-content:space-between;align-items:center;background:#f7faf9}
+  details.grp>summary::-webkit-details-marker{display:none}
+  details.grp>summary .ar{transition:transform .2s;color:var(--muted)}
+  details.grp[open]>summary .ar{transform:rotate(90deg)}
+  .grp .body{padding:6px 14px 16px}
+  .fld{margin:12px 0}
+  .fld label{display:block;font-size:15px;font-weight:700;color:var(--ink);margin-bottom:5px}
+  .fld .hint{font-size:12px;color:var(--muted);font-weight:400}
+  .fld input,.fld select,.fld textarea{width:100%;font-family:inherit;font-size:16px;padding:12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  .fld textarea{min-height:80px;resize:vertical}
+  .subhead{font-weight:800;color:var(--teal2);margin:18px 0 2px;font-size:14.5px;border-bottom:2px solid #eee;padding-bottom:4px}
+  .calc{background:#e9f3f5;border:1px dashed var(--cyan);border-radius:10px;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .calc .v{font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums;text-align:right}
+  .photos{margin:8px 0}
+  .photo-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .thumb{width:84px;height:84px;border-radius:9px;object-fit:cover;border:1.5px solid var(--line);background:#eee}
+  .photo-wrap{position:relative}
+  .photo-add{display:flex;align-items:center;gap:8px;background:#eaf4f6;color:var(--teal);border:1.5px dashed var(--cyan);border-radius:10px;padding:11px 14px;font-weight:700;width:100%;justify-content:center}
+  .fab{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;max-width:780px;margin:0 auto;z-index:15}
+  .fab button{flex:1}
+  .note{font-size:13px;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin:10px 0}
+  .warn{background:#fbecea;border-color:#e3c4c0;color:var(--red);font-weight:600}
+  dialog{border:none;border-radius:15px;padding:0;max-width:360px;width:92%;box-shadow:0 12px 44px rgba(0,0,0,.34)}
+  dialog::backdrop{background:rgba(8,20,26,.55)}
+  .dlg{padding:16px}
+  .dlg h3{margin:0 0 12px;color:var(--teal)}
+  .typebtn{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:#f6f7f5;border:1.5px solid var(--line);margin:7px 0;color:var(--ink);font-weight:600}
+  .typebtn small{color:var(--muted);font-weight:400}
+  #viewer img{width:100%;border-radius:10px;display:block}
+  #prog{position:fixed;inset:0;background:rgba(8,20,26,.65);display:none;align-items:center;justify-content:center;z-index:50}
+  #prog .box{background:#fff;border-radius:14px;padding:22px;width:80%;max-width:320px;text-align:center}
+  #prog .bar{height:10px;background:#e3e7e6;border-radius:6px;overflow:hidden;margin-top:12px}
+  #prog .bar>i{display:block;height:100%;width:0;background:var(--gold)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="ic">💧</div>
+  <div class="title">Field Verification Log<div class="sub">Independent evidence capture, MWSC assets</div></div>
+  <div id="saved">starting…</div>
+</header>
+<main id="main"></main>
+
+<input type="file" id="fileIn" accept="image/*" capture="environment" multiple class="hidden"/>
+
+<dialog id="typeDlg"><div class="dlg">
+  <h3>Add an asset to evaluate</h3>
+  <button class="typebtn" data-newtype="borehole"><span class="badge b-borehole">🛢️</span><span><b>Borehole / well</b><br><small>structure, yield, quality, sustainability</small></span></button>
+  <button class="typebtn" data-newtype="reservoir"><span class="badge b-reservoir">🛜</span><span><b>Reservoir / tank</b><br><small>concrete, steel, or fiberglass on a steel frame</small></span></button>
+  <button class="typebtn" data-newtype="genset"><span class="badge b-genset">⚙️</span><span><b>Engine & generator</b><br><small>diesel engine and alternator set</small></span></button>
+  <button class="typebtn" data-newtype="grid"><span class="badge b-grid">☀️</span><span><b>Electricity grid</b><br><small>solar array, transformers, distribution</small></span></button>
+  <button class="typebtn" data-newtype="other"><span class="badge b-other">➕</span><span><b>Other asset</b><br><small>anything else, with free sections</small></span></button>
+  <div style="text-align:right;margin-top:8px"><button class="btn-line btn-sm" data-close="typeDlg">Cancel</button></div>
+</div></dialog>
+
+<dialog id="viewer"><div class="dlg">
+  <div id="viewerImg"></div>
+  <div class="fld" style="margin-top:10px"><label>Caption</label><input type="text" id="viewerCap" placeholder="describe this photo"/></div>
+  <div class="row" style="margin-top:6px"><button class="btn-danger btn-sm" data-photodel="">Delete photo</button><div style="flex:1"></div><button class="btn-teal btn-sm" data-close="viewer">Done</button></div>
+</div></dialog>
+
+<div id="prog"><div class="box"><div id="progTxt">Building PDF…</div><div class="bar"><i id="progBar"></i></div></div></div>
+
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
