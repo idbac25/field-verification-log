@@ -29,7 +29,8 @@
     txt("assetId", "Asset ID / tag", { hint: "e.g. BH-07, TANK-3, GEN-2" }),
     txt("assetName", "Name / description"),
     txt("location", "Location / area"),
-    txt("gps", "GPS or what3words", { hint: "optional" }),
+    { t: "geo", k: "geo", l: "Location coordinates" },
+    txt("gps", "what3words / location notes", { hint: "optional; e.g. a what3words address" }),
     { k: "dateEval", l: "Date of evaluation", t: "date" },
     txt("observer", "Observer (you)"),
     txt("engCompany", "Engineering company"),
@@ -202,6 +203,7 @@
   }
   function fieldHTML(a, f) {
     if (f.t === "head") return `<div class="subhead">${esc(f.l)}</div>`;
+    if (f.t === "geo") return geoFieldHTML(a, f);
     const d = a.data, v = d[f.k] == null ? "" : d[f.k], hint = f.hint ? `<span class="hint"> — ${esc(f.hint)}</span>` : "";
     if (f.t === "calc") {
       const auto = f.fn(d), ov = d[f.k], val = (ov != null && ov !== "") ? ov : auto;
@@ -219,6 +221,76 @@
     el.innerHTML = list.map(p => `<div class="photo-wrap"><img class="thumb" data-photoview="${p.id}" src="${p.thumb ? objUrl(p.thumb) : ""}" alt="evidence"/></div>`).join("");
   }
 
+  // ---- location coordinates ----
+  function geoFieldHTML(a, f) {
+    const d = a.data || {};
+    const lat = d.lat == null ? "" : d.lat, lng = d.lng == null ? "" : d.lng;
+    return `<div class="fld"><label>${esc(f.l)} <span class="hint">— for the interactive map</span></label>
+      <div class="geo">
+        <button type="button" class="geo-btn" data-geo="capture">📍 Use my phone GPS</button>
+        <div class="geo-row">
+          <input type="text" inputmode="decimal" data-k="lat" id="lat_in" placeholder="Latitude" value="${esc(lat)}"/>
+          <input type="text" inputmode="decimal" data-k="lng" id="lng_in" placeholder="Longitude" value="${esc(lng)}"/>
+        </div>
+        <input type="text" class="geo-paste" data-geo="paste" placeholder="or paste a Google Maps link, full Plus Code, or 'lat, lng'"/>
+        <div class="hint geo-info" id="geo_info">${geoInfoHTML(d)}</div>
+      </div></div>`;
+  }
+  function geoInfoHTML(d) {
+    const la = parseFloat(d.lat), lo = parseFloat(d.lng);
+    if (isNaN(la) || isNaN(lo)) return "No coordinates yet. Tap GPS on site, or type / paste them.";
+    let s = "Set to " + la.toFixed(6) + ", " + lo.toFixed(6);
+    if (d.gpsAcc) s += " (±" + Math.round(d.gpsAcc) + " m, " + esc(d.geoSource || "gps") + ")";
+    else if (d.geoSource) s += " (" + esc(d.geoSource) + ")";
+    s += ` &middot; <a href="https://www.google.com/maps?q=${la},${lo}" target="_blank" rel="noopener">open in Maps ↗</a>`;
+    return s;
+  }
+  function setGeo(a, lat, lng, source, acc) {
+    a.data = a.data || {};
+    a.data.lat = +Number(lat).toFixed(7); a.data.lng = +Number(lng).toFixed(7);
+    a.data.geoSource = source; a.data.geoAt = new Date().toISOString();
+    a.data.gpsAcc = (acc == null ? null : Math.round(acc));
+    touch(a); saveAsset(a);
+    const li = document.getElementById("lat_in"), ni = document.getElementById("lng_in"), info = document.getElementById("geo_info");
+    if (li) li.value = a.data.lat; if (ni) ni.value = a.data.lng; if (info) info.innerHTML = geoInfoHTML(a.data);
+  }
+  function captureGPS() {
+    const a = state.assets.find(x => x.id === openId); if (!a) return;
+    const info = document.getElementById("geo_info");
+    if (!navigator.geolocation) { if (info) info.textContent = "This device has no GPS available."; return; }
+    if (info) info.textContent = "Getting GPS fix… (allow location if asked)";
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setGeo(a, pos.coords.latitude, pos.coords.longitude, "gps", pos.coords.accuracy),
+      (err) => { if (info) info.textContent = "GPS failed: " + (err.message || ("code " + err.code)) + ". You can type or paste coordinates instead."; },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  }
+  function onGeoPaste(val) {
+    const a = state.assets.find(x => x.id === openId); if (!a) return;
+    const info = document.getElementById("geo_info");
+    const r = parseLocation(val);
+    if (!r) { if (info) info.textContent = "Could not read that. Paste a Google Maps link, a full Plus Code, or 'lat, lng'."; return; }
+    setGeo(a, r.lat, r.lng, r.source, null);
+  }
+  function parseLocation(t) {
+    if (!t) return null; t = String(t).trim();
+    let m;
+    if ((m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) return { lat: +m[1], lng: +m[2], source: "maps link" };
+    if ((m = t.match(/[?&](?:q|ll|query|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/))) return { lat: +m[1], lng: +m[2], source: "maps link" };
+    if ((m = t.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/))) return { lat: +m[1], lng: +m[2], source: "maps link" };
+    if ((m = t.match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)$/))) { const la = +m[1], lo = +m[2]; if (Math.abs(la) <= 90 && Math.abs(lo) <= 180) return { lat: la, lng: lo, source: "manual" }; }
+    if ((m = t.match(/([23456789CFGHJMPQRVWX]{8}\+[23456789CFGHJMPQRVWX]{2,3})/i))) { const g = decodeOLC(m[1]); if (g) return { lat: g.lat, lng: g.lng, source: "plus code" }; }
+    return null;
+  }
+  function decodeOLC(code) {
+    const A = "23456789CFGHJMPQRVWX";
+    code = String(code).toUpperCase().replace(/\+/, "");
+    if (code.length < 10) return null;
+    let lat = -90, lng = -180, size = 20;
+    for (let i = 0; i < 10; i += 2) { const a = A.indexOf(code[i]), b = A.indexOf(code[i + 1]); if (a < 0 || b < 0) return null; lat += a * size; lng += b * size; size /= 20; }
+    const half = size * 20 / 2;
+    return { lat: +(lat + half).toFixed(7), lng: +(lng + half).toFixed(7) };
+  }
+
   // ---- updates ----
   function onInput(e) {
     const t = e.target;
@@ -230,6 +302,7 @@
     if (t.dataset.k && openId) {
       const a = state.assets.find(x => x.id === openId); if (!a) return; a.data = a.data || {};
       a.data[t.dataset.k] = t.value; touch(a); saveAsset(a);
+      if (t.dataset.k === "lat" || t.dataset.k === "lng") { a.data.geoSource = "manual"; a.data.gpsAcc = null; const info = document.getElementById("geo_info"); if (info) info.innerHTML = geoInfoHTML(a.data); }
       allFields(a.type).forEach(f => {
         if (f.t !== "calc") return;
         const auto = f.fn(a.data);
@@ -309,6 +382,7 @@
     const kv = (label, val) => { if (val == null || val === "" || val === "—") return; doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); const lab = label + ":  "; const lw = doc.getTextWidth(lab); doc.setFont("helvetica", "normal"); const lines = doc.splitTextToSize(String(val), CW - lw); ensure(lines.length * 12 + 4); doc.setFont("helvetica", "bold"); doc.text(lab, M, y); doc.setFont("helvetica", "normal"); doc.text(lines, M + lw, y); y += lines.length * 12 + 3; };
     if (startNewPage) { /* already on a fresh page */ }
     H((d.assetId || d.assetName || tm.n) + "   (" + tm.n + ")", 15); y += 2;
+    if (d.lat != null && d.lat !== "" && d.lng != null && d.lng !== "") kv("Coordinates", d.lat + ", " + d.lng + (d.gpsAcc ? " (±" + Math.round(d.gpsAcc) + " m, " + (d.geoSource || "") + ")" : (d.geoSource ? " (" + d.geoSource + ")" : "")));
     let photos = []; try { photos = (await idbByAsset(a.id)).filter(isLive); } catch (e) {}
     for (const s of sections(a.type)) {
       const rows = s.f.filter(f => f.t !== "head" && f.t !== "calc" && d[f.k] != null && d[f.k] !== "");
@@ -395,8 +469,9 @@
 
   // ---- event delegation ----
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-action],[data-open],[data-newtype],[data-close],[data-addphoto],[data-photoview],[data-photodel],[data-recalc],[data-id]");
+    const t = e.target.closest("[data-action],[data-open],[data-newtype],[data-close],[data-addphoto],[data-photoview],[data-photodel],[data-recalc],[data-id],[data-geo]");
     if (!t) return;
+    if (t.dataset.geo === "capture") return captureGPS();
     if (t.dataset.close) { const dlg = document.getElementById(t.dataset.close); if (dlg) dlg.close(); return; }
     if (t.dataset.recalc) { const a = state.assets.find(x => x.id === openId); if (a) { const k = t.dataset.recalc, f = allFields(a.type).find(x => x.k === k); a.data[k] = ""; touch(a); saveAsset(a); const inp = document.getElementById("ci_" + k); if (inp && f) inp.value = f.fn(a.data); } return; }
     if (t.dataset.newtype) return addAsset(t.dataset.newtype);
@@ -414,7 +489,7 @@
     if (act === "restore") return restorePick();
   });
   document.addEventListener("input", onInput);
-  document.addEventListener("change", (e) => { if (e.target.dataset && (e.target.dataset.k || e.target.dataset.meta)) onInput(e); if (e.target.id === "viewerCap" && viewPhotoId) { const p = curPhotos.find(x => x.id === viewPhotoId); if (p) { p.caption = e.target.value; p.syncState = "dirty"; idbPut("photos", p); } } });
+  document.addEventListener("change", (e) => { if (e.target.dataset && (e.target.dataset.k || e.target.dataset.meta)) onInput(e); if (e.target.dataset && e.target.dataset.geo === "paste") { onGeoPaste(e.target.value); e.target.value = ""; } if (e.target.id === "viewerCap" && viewPhotoId) { const p = curPhotos.find(x => x.id === viewPhotoId); if (p) { p.caption = e.target.value; p.syncState = "dirty"; idbPut("photos", p); if (window.Cloud) Cloud.bump(); } } });
 
   // ---- API for the cloud sync layer (cloud.js) ----
   window.FieldApp = {
