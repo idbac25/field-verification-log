@@ -1,6 +1,6 @@
 // Offline app-shell cache so the log works with no internet and survives reloads.
-const CACHE = "field-log-v3";
-const ASSETS = ["./", "./index.html", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./vendor/jspdf.umd.min.js"];
+const CACHE = "field-log-v4";
+const ASSETS = ["./", "./index.html", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./vendor/jspdf.umd.min.js", "./cloud-config.js", "./cloud.js", "./vendor/supabase.js"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
@@ -9,5 +9,7 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  // Never intercept cross-origin requests (Supabase auth/REST/storage). Let them hit the network directly.
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)).catch(() => caches.match("./index.html")));
 });

@@ -122,6 +122,8 @@
   const idbPut = (store, obj) => new Promise((res, rej) => { const tx = db.transaction(store, "readwrite"); tx.objectStore(store).put(obj); tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
   const idbGetAll = (store) => new Promise((res, rej) => { const tx = db.transaction(store, "readonly"); const q = tx.objectStore(store).getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); });
   const idbByAsset = (assetId) => new Promise((res, rej) => { const tx = db.transaction("photos", "readonly"); const q = tx.objectStore("photos").index("byAsset").getAll(assetId); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); });
+  const idbGet = (store, id) => new Promise((res, rej) => { const tx = db.transaction(store, "readonly"); const q = tx.objectStore(store).get(id); q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error); });
+  let readyResolve; const readyP = new Promise(r => { readyResolve = r; });
 
   // ---- state ----
   let state = { assets: [], meta: {} };
@@ -136,7 +138,7 @@
   function saveMeta() { try { localStorage.setItem("evalapp:meta", JSON.stringify(state.meta)); } catch (e) {} }
   function mirror() { try { localStorage.setItem("evalapp:assets", JSON.stringify(state.assets.filter(isLive))); } catch (e) {} }
   function touch(a) { a.updatedAt = new Date().toISOString(); a.syncState = "dirty"; }
-  function saveAsset(a) { clearTimeout(saveT); saveT = setTimeout(async () => { try { await idbPut("assets", a); mirror(); setSaved("saved ✓"); } catch (e) { setSaved("SAVE FAILED", true); } }, 300); }
+  function saveAsset(a) { clearTimeout(saveT); saveT = setTimeout(async () => { try { await idbPut("assets", a); mirror(); setSaved("saved ✓"); if (window.Cloud) Cloud.bump(); } catch (e) { setSaved("SAVE FAILED", true); } }, 300); }
 
   // ---- boot ----
   async function boot() {
@@ -147,6 +149,7 @@
     if (!state.assets.length) { try { const m = JSON.parse(localStorage.getItem("evalapp:assets") || "[]"); if (m.length) { state.assets = m; for (const a of m) await idbPut("assets", a); } } catch (e) {} }
     if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e) {} }
     renderHome(); setSaved("saved ✓");
+    readyResolve();
     if ("serviceWorker" in navigator) { navigator.serviceWorker.register("sw.js").catch(() => {}); }
   }
 
@@ -265,7 +268,7 @@
         await idbPut("photos", p);
         curPhotos.push(p);
         if (a) { a.photoCount = (a.photoCount || 0) + 1; touch(a); await idbPut("assets", a); mirror(); }
-        renderStrip(sectionId); setSaved("photo saved ✓");
+        renderStrip(sectionId); setSaved("photo saved ✓"); if (window.Cloud) Cloud.bump();
       } catch (e) { setSaved("PHOTO SAVE FAILED", true); alert("Could not save a photo. Free up phone storage and try again.\n\n" + (e && e.message ? e.message : e)); }
     }
   }
@@ -284,6 +287,7 @@
     curPhotos = curPhotos.filter(x => x.id !== photoId);
     document.getElementById("viewer").close();
     sections(a.type).forEach(s => renderStrip(s.id));
+    if (window.Cloud) Cloud.bump();
   }
 
   // ---- PDF ----
@@ -386,8 +390,8 @@
   }
 
   // ---- create / delete asset ----
-  function addAsset(type) { const a = { id: uuid(), type, schemaVersion: SCHEMA_VERSION, deviceId: state.meta.deviceId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), syncState: "dirty", photoCount: 0, data: { dateEval: new Date().toISOString().slice(0, 10), observer: state.meta.evaluator || "" } }; state.assets.push(a); idbPut("assets", a).then(mirror); document.getElementById("typeDlg").close(); openAsset(a.id); }
-  async function delAsset(id) { if (!confirm("Delete this asset and its photos?")) return; const a = state.assets.find(x => x.id === id); if (!a) return; a.syncState = "deleted"; a.updatedAt = new Date().toISOString(); await idbPut("assets", a); try { const ps = (await idbByAsset(id)); for (const p of ps) { p.syncState = "deleted"; p.blob = null; p.thumb = null; await idbPut("photos", p); } } catch (e) {} mirror(); renderHome(); }
+  function addAsset(type) { const a = { id: uuid(), type, schemaVersion: SCHEMA_VERSION, deviceId: state.meta.deviceId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), syncState: "dirty", photoCount: 0, data: { dateEval: new Date().toISOString().slice(0, 10), observer: state.meta.evaluator || "" } }; state.assets.push(a); idbPut("assets", a).then(mirror); document.getElementById("typeDlg").close(); openAsset(a.id); if (window.Cloud) Cloud.bump(); }
+  async function delAsset(id) { if (!confirm("Delete this asset and its photos?")) return; const a = state.assets.find(x => x.id === id); if (!a) return; a.syncState = "deleted"; a.updatedAt = new Date().toISOString(); await idbPut("assets", a); try { const ps = (await idbByAsset(id)); for (const p of ps) { p.syncState = "deleted"; p.blob = null; p.thumb = null; await idbPut("photos", p); } } catch (e) {} mirror(); renderHome(); if (window.Cloud) Cloud.bump(); }
 
   // ---- event delegation ----
   document.addEventListener("click", (e) => {
@@ -411,6 +415,16 @@
   });
   document.addEventListener("input", onInput);
   document.addEventListener("change", (e) => { if (e.target.dataset && (e.target.dataset.k || e.target.dataset.meta)) onInput(e); if (e.target.id === "viewerCap" && viewPhotoId) { const p = curPhotos.find(x => x.id === viewPhotoId); if (p) { p.caption = e.target.value; p.syncState = "dirty"; idbPut("photos", p); } } });
+
+  // ---- API for the cloud sync layer (cloud.js) ----
+  window.FieldApp = {
+    ready: readyP,
+    idbGet, idbGetAll, idbPut, idbByAsset,
+    downscale, uuid, isLive,
+    getMeta: () => state.meta, saveMeta,
+    reload: async () => { try { state.assets = await idbGetAll("assets"); } catch (e) {} },
+    refresh: () => { try { if (!openId) renderHome(); } catch (e) {} },
+  };
 
   boot();
 })();
