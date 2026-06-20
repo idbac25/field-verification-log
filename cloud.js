@@ -251,15 +251,27 @@
 
   async function doAuth(mode) {
     const email = ($("cEmail").value || "").trim(), pass = $("cPass").value || "";
-    if (!email || !pass) return msg("Enter an email and password.", true);
+    if (!email || !pass) return msg("Enter an email and a password.", true);
     if (pass.length < 6) return msg("Password must be at least 6 characters.", true);
-    if (!online()) return msg("You need internet to sign in the first time.", true);
+    if (!online()) return msg("You need internet the first time you sign in.", true);
     msg(mode === "up" ? "Creating account…" : "Signing in…");
     try {
-      const fn = mode === "up" ? sb.auth.signUp({ email, password: pass }) : sb.auth.signInWithPassword({ email, password: pass });
-      const { data, error } = await fn;
-      if (error) return msg(error.message || "Auth failed.", true);
-      if (mode === "up" && !data.session) { return msg("Account created. Check your email to confirm, then sign in.", false); }
+      if (mode === "up") {
+        const { data, error } = await sb.auth.signUp({ email, password: pass });
+        if (error) {
+          if (/already|registered|exists/i.test(error.message || "")) {
+            msg("That account already exists, signing you in…");
+            const r = await sb.auth.signInWithPassword({ email, password: pass });
+            if (r.error) return msg("This email already has an account, but that password is wrong. Use Sign in, or reset it in Supabase.", true);
+            return; // onAuthStateChange takes over
+          }
+          return msg(error.message || "Could not create the account.", true);
+        }
+        if (!data.session) return msg("Account created. If email confirmation is on, confirm via the email, then Sign in.", false);
+        return; // signed in; onAuthStateChange takes over
+      }
+      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (error) return msg(error.message || "Sign in failed.", true);
       // onAuthStateChange will pick up the session and start sync
     } catch (e) { msg((e && e.message) || "Network error.", true); }
   }
